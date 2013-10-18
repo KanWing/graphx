@@ -15,8 +15,6 @@ import org.apache.spark.util.ClosureCleaner
 
 import org.apache.spark.rdd
 import org.apache.spark.rdd.RDD
-import org.apache.spark.rdd.IndexedRDD
-import org.apache.spark.rdd.RDDIndex
 
 
 import org.apache.spark.graph._
@@ -239,7 +237,8 @@ class GraphImpl[VD: ClassManifest, ED: ClassManifest] protected (
     //   .map(v => (v.id, v.data._1)).indexed()
 
     // Reuse the partitioner (but not the index) from this graph
-    val newVTable = vertices.filter(v => vpred(v._1, v._2)).indexed(vTable.index.partitioner)
+    val newVTable = 
+      IndexedRDD(vertices.filter(v => vpred(v._1, v._2)).partitionBy(vTable.index.partitioner))
 
 
     // Restrict the set of edges to those that satisfy the vertex and the edge predicate.
@@ -436,8 +435,7 @@ object GraphImpl {
       // Get the number of partitions
       val numPartitions = edges.partitions.size
       val ceilSqrt: Pid = math.ceil(math.sqrt(numPartitions)).toInt 
-    edges
-      .map { e =>
+    IndexedRDD(edges.map { e =>
         // Random partitioning based on the source vertex id.
         // val part: Pid = edgePartitionFunction1D(e.srcId, e.dstId, numPartitions)
         // val part: Pid = edgePartitionFunction2D(e.srcId, e.dstId, numPartitions, ceilSqrt)
@@ -456,7 +454,7 @@ object GraphImpl {
         }
         val edgePartition = builder.toEdgePartition
         Iterator((pid, edgePartition))
-      }, preservesPartitioning = true).indexed()
+      }, preservesPartitioning = true))
   }
 
 
