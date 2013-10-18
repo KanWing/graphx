@@ -247,9 +247,7 @@ class GraphImpl[VD: ClassManifest, ED: ClassManifest] protected (
       triplets.filter(
         t => vpred( t.srcId, t.srcAttr ) && vpred( t.dstId, t.dstAttr ) && epred(t)
         )
-        .map( t => Edge(t.srcId, t.dstId, t.attr) ),
-      eTable.index.partitioner.numPartitions
-      )
+        .map( t => Edge(t.srcId, t.dstId, t.attr) ))
 
     // Construct the Vid2Pid map. Here we assume that the filter operation 
     // behaves deterministically.  
@@ -276,11 +274,11 @@ class GraphImpl[VD: ClassManifest, ED: ClassManifest] protected (
         .mapValues { ts: List[EdgeTriplet[VD, ED]] => f(ts.toIterator) }
         .toList
         .map { case ((src, dst), data) => Edge(src, dst, data) }
+        .toIterator
       }
 
       //TODO(crankshaw) eliminate the need to call createETable
-      val newETable = createETable(newEdges, 
-        eTable.index.partitioner.numPartitions)
+      val newETable = createETable(newEdges)
       new GraphImpl(vTable, vid2pid, localVidMap, newETable)
   }
 
@@ -297,8 +295,7 @@ class GraphImpl[VD: ClassManifest, ED: ClassManifest] protected (
         .map { case ((src, dst), data) => Edge(src, dst, data) }
       }
       // TODO(crankshaw) eliminate the need to call createETable
-      val newETable = createETable(newEdges, 
-        eTable.index.partitioner.numPartitions)
+      val newETable = createETable(newEdges)
 
       new GraphImpl(vTable, vid2pid, localVidMap, newETable)
   }
@@ -392,20 +389,33 @@ class GraphImpl[VD: ClassManifest, ED: ClassManifest] protected (
 object GraphImpl {
 
   def apply[VD: ClassManifest, ED: ClassManifest](
-    vertices: RDD[(Vid, VD)], edges: RDD[Edge[ED]]): 
+    vertices: RDD[(Vid, VD)], edges: RDD[Edge[ED]],
+    defaultVertexAttr: VD): 
   GraphImpl[VD,ED] = {
-
-    apply(vertices, edges, 
-      vertices.context.defaultParallelism, edges.context.defaultParallelism)
+    apply(vertices, edges, defaultVertexAttr, (a:VD, b:VD) => a)
   }
 
 
   def apply[VD: ClassManifest, ED: ClassManifest](
-    vertices: RDD[(Vid, VD)], edges: RDD[Edge[ED]],
-    numVPart: Int, numEPart: Int): GraphImpl[VD,ED] = {
+    vertices: RDD[(Vid, VD)], 
+    edges: RDD[Edge[ED]],
+    defaultVertexAttr: VD,
+    mergeFunc: (VD, VD) => VD): GraphImpl[VD,ED] = {
 
-    val vtable = vertices.indexed(numVPart)
-    val etable = createETable(edges, numEPart)
+    val vtable = IndexedRDD(vertices, mergeFunc) 
+    /** 
+     * @todo Verify that there are no edges that contain vertices 
+     * that are not in vTable.  This should probably be resolved:
+     *
+     *  edges.flatMap{ e => Array((e.srcId, null), (e.dstId, null)) }
+     *       .cogroup(vertices).map{
+     *         case (vid, _, attr) => 
+     *           if (attr.isEmpty) (vid, defaultValue)
+     *           else (vid, attr)
+     *        }
+     * 
+     */
+    val etable = createETable(edges)
     val vid2pid = createVid2Pid(etable, vtable.index)
     val localVidMap = createLocalVidMap(etable)
     new GraphImpl(vtable, vid2pid, localVidMap, etable)
@@ -421,9 +431,10 @@ object GraphImpl {
    * key-value pair: the key is the partition id, and the value is an EdgePartition object
    * containing all the edges in a partition.
    */
-  protected def createETable[ED: ClassManifest](
-    edges: RDD[Edge[ED]], numPartitions: Int)
+  protected def createETable[ED: ClassManifest](edges: RDD[Edge[ED]])
     : IndexedRDD[Pid, EdgePartition[ED]] = {
+      // Get the number of partitions
+      val numPartitions = edges.partitions.size
       val ceilSqrt: Pid = math.ceil(math.sqrt(numPartitions)).toInt 
     edges
       .map { e =>
