@@ -36,19 +36,59 @@ limited fault-tolerance and support for interactive analysis.
 
 The GraphX project combines the advantages of both data-parallel and
 graph-parallel systems by efficiently expressing graph computation
-within the [Spark](http://spark.incubator.apache.org) framework.  We
-leverage new ideas in distributed graph representation to efficiently
-distribute graphs as tabular data-structures.  Similarly, we leverage
-advances in data-flow systems to exploit in-memory computation and
-fault-tolerance.  We provide powerful new operations to simplify graph
-construction and transformation.  Using these primitives we implement
-the PowerGraph and Pregel abstractions in less than 20 lines of code.
-Finally, by exploiting the Scala foundation of Spark, we enable users
-to interactively load, transform, and compute on massive graphs.
+within the [Spark](http://spark.incubator.apache.org) framework.
+GraphX leverage new ideas in distributed graph representation to
+efficiently distribute graphs as tabular data-structures. Similarly,
+GraphX leverage advances in data-flow systems to exploit in-memory
+computation and fault-tolerance.
 
 <p align="center">
   <img src="https://raw.github.com/amplab/graphx/master/docs/img/tables_and_graphs.png" />
 </p>
+
+GraphX provides powerful new operations to simplify graph construction
+and transformation. In addition, GraphX enables users to program
+complex graph-parallel algorithms using several of the most popular
+graph-parallel abstractions including PowerGraph and Pregel.  Finally,
+by exploiting the Scala foundation of Spark, GraphX enable users to
+interactively load, transform, and compute on massive graphs.
+
+
+# The GraphX API
+
+Here is a simple script written using the GraphX API:
+
+```scala
+import org.apache.spark._
+import org.apache.spark.graph._
+
+// Connect to the Spark Job server
+val sc = new SparkContext("spark://master.amplab.org", "research")
+
+/// Tables -------------------------------------------------------------
+// Data from http://www.nber.org/patents/
+
+// Load and parse the edges into collection of source-dest pairs
+val edges: rdd.RDD[Edge[Int]] = sc.textFile("hdfs://cite75_99.txt")
+  .filter(line => line(0) != '\"') // remove the column labels 
+  .map(_.split(",")) // Split the tab separated line
+  .map(x => Edge(x(0).toLong, x(1).toLong, 1)) // parse the source and destination
+
+// Define the vertex attributes
+case class Patent(val year: Int, val country: String, val state: String)
+
+// Load and parse the vertices and their attributes
+val vertices: RDD[(Vid, Patent)] = sc.textFile("hdfs://apat63_99.txt")
+  .filter(line => line(0) != '\"') // remove the column labels 
+  .map(_.split(",")) // Split the lines
+  .filter(x => x.size >= 6 && !x(3).isEmpty && (x(3) forall Character.isDigit))
+  .map(x => (x(0).toLong, Patent(x(3).toInt, x(4), x(5))))
+
+/// Graphs -------------------------------------------------------------
+val graph = Graph(vertices, edges)
+
+```
+
 
 ## Examples
 
