@@ -35,12 +35,11 @@ limited fault-tolerance and support for interactive analysis.
 ## Solution
 
 The GraphX project combines the advantages of both data-parallel and
-graph-parallel systems by efficiently expressing graph computation
-within the [Spark](http://spark.incubator.apache.org) framework.
-GraphX leverage new ideas in distributed graph representation to
-efficiently distribute graphs as tabular data-structures. Similarly,
-GraphX leverage advances in data-flow systems to exploit in-memory
-computation and fault-tolerance.
+graph-parallel systems by efficiently expressing graph computation within the
+[Spark](http://spark.incubator.apache.org) framework.  GraphX leverage new ideas
+in distributed graph representation to efficiently distribute graphs as tabular
+data-structures. Similarly, GraphX leverage advances in data-flow systems to
+exploit in-memory computation and fault-tolerance.
 
 <p align="center">
   <img src="https://raw.github.com/amplab/graphx/master/docs/img/tables_and_graphs.png" />
@@ -92,10 +91,10 @@ val graph = Graph(vertices, edges)
 
 ## Examples
 
-Suppose I want to build a graph from some text files, restrict the graph
-to important relationships and users, run page-rank on the sub-graph, and
-then finally return attributes associated with the top users.  I can do
-all of this in just a few lines with GraphX:
+Suppose I want to build a graph from some text files, restrict the graph to
+important relationships and users, run page-rank on the sub-graph, and then
+finally return attributes associated with the top users.  I can do all of this
+in just a few lines with GraphX:
 
 ```scala
 // Connect to the Spark cluster
