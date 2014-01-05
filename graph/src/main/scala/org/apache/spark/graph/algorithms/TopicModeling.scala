@@ -122,23 +122,30 @@ class LDA(@transient val tokens: RDD[(LDA.WordId, LDA.DocId)],
       val nw = nWords
       // Define the function to sample a single token
       // I had originally used def sampleToken but this leads to closure capture of the LDA class (an abomination).
-      val sampleToken = (gen: java.util.Random, triplet: EdgeTriplet[Factor, TopicId]) => {
-        val wHist: Array[Count] = triplet.srcAttr
-        val dHist: Array[Count] = triplet.dstAttr
-        val totalHist: Array[Count] = totalHistbcast.value
+      val sampleToken = (totalHist: Factor, termDocCounts: java.util.HashMap[Vid, Factor],
+          gen: java.util.Random, triplet: EdgeTriplet[Factor, TopicId]) => {
+        assert(termDocCounts.containsKey(triplet.srcId))
+        assert(termDocCounts.containsKey(triplet.dstId))
+        val wHist: Factor = termDocCounts.get(triplet.srcId)
+        val dHist: Factor = termDocCounts.get(triplet.dstId)
         val oldTopic = triplet.attr
+        if (wHist(oldTopic) <= 0) {
+          println("strange error")
+        }
         assert(wHist(oldTopic) > 0)
         assert(dHist(oldTopic) > 0)
         assert(totalHist(oldTopic) > 0)
+        totalHist(oldTopic) -= 1
+        wHist(oldTopic) -= 1
+        dHist(oldTopic) -= 1
         // Construct the conditional
         val conditional = new Array[Double](nt)
         var t = 0
         var conditionalSum = 0.0
         while (t < conditional.size) {
-          val cavityOffset = if (t == oldTopic) 1 else 0
-          val w = wHist(t) - cavityOffset
-          val d = dHist(t) - cavityOffset
-          val total = totalHist(t) - cavityOffset
+          val w = wHist(t)
+          val d = dHist(t)
+          val total = totalHist(t)
           conditional(t) = (a + d) * (b + w) / (b * nw + total)
           conditionalSum += conditional(t)
           t += 1
@@ -155,6 +162,9 @@ class LDA(@transient val tokens: RDD[(LDA.WordId, LDA.DocId)],
           cumsum += conditional(t)
         }
         val newTopic = t
+        totalHist(newTopic) += 1
+        wHist(newTopic) += 1
+        dHist(newTopic) += 1
         // Return the new topic
         newTopic
       }
@@ -163,8 +173,18 @@ class LDA(@transient val tokens: RDD[(LDA.WordId, LDA.DocId)],
       val parts = graph.edges.partitions.size
       val interIter = internalIteration
       graph = graph.mapTriplets { (pid, iter) =>
+        val totalHist: Factor = totalHistbcast.value.clone
+        val termDocCounts = new java.util.HashMap[Vid, Factor]()
         val gen = new java.util.Random(parts * interIter + pid)
-        iter.map(token => sampleToken(gen, token))
+        iter.map { token =>
+          if (!termDocCounts.containsKey(token.srcId)) {
+            termDocCounts.put(token.srcId, token.srcAttr.clone)
+          }
+          if (!termDocCounts.containsKey(token.dstId)) {
+            termDocCounts.put(token.dstId, token.dstAttr.clone)
+          }
+          sampleToken(totalHist, termDocCounts, gen, token)
+        }
       }
 
       // Update the counts
